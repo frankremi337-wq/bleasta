@@ -735,7 +735,7 @@ async function applyBgRemoveIfNeeded(file) {
 
     if (!window._bgModel) {
       status.textContent = "Laster modell…";
-      window._bgModel     = await AutoModel.from_pretrained("briaai/RMBG-1.4", { device: "cpu" });
+      window._bgModel     = await AutoModel.from_pretrained("briaai/RMBG-1.4", { device: "wasm" });
       window._bgProcessor = await AutoProcessor.from_pretrained("briaai/RMBG-1.4");
     }
 
