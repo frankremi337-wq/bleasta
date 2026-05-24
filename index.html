@@ -203,7 +203,6 @@
   #toast{display:none;position:fixed;bottom:calc(env(safe-area-inset-bottom) + 84px);left:50%;background:var(--surface2);color:var(--text);padding:10px 20px;border-radius:12px;font-size:14px;z-index:9999;border:1px solid var(--border);box-shadow:0 6px 20px rgba(0,0,0,0.3);white-space:nowrap;animation:toastIn 0.25s ease forwards;}
   @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/background-removal.js"></script>
 </head>
 <body>
 
@@ -720,32 +719,36 @@ window.toggleBgRemove = () => {
 async function applyBgRemoveIfNeeded(file) {
   processedBlob = null;
   if (!bgRemoveEnabled) {
-    // just show original
-    const url = URL.createObjectURL(file);
-    preview.src = url;
+    preview.src = URL.createObjectURL(file);
     return;
   }
-  // show spinner over preview
   const spinner = document.getElementById("bgRemoveSpinner");
+  const status  = document.getElementById("uploadStatus");
   spinner.style.display = "flex";
+  status.textContent = "Forbereder…";
   try {
-    const result = await window.backgroundRemoval.removeBackground(file, {
+    // dynamically import the ESM version
+    const { removeBackground } = await import(
+      "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/background-removal.esm.js"
+    );
+    const result = await removeBackground(file, {
       publicPath: "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/",
       progress: (key, current, total) => {
         if (total > 0) {
-          const pct = Math.round((current/total)*100);
-          document.getElementById("uploadStatus").textContent = pct < 100 ? `Forbereder AI… ${pct}%` : "";
+          const pct = Math.round((current / total) * 100);
+          status.textContent = pct < 100 ? `${pct}%` : "";
         }
       }
     });
     processedBlob = result;
     preview.src = URL.createObjectURL(result);
-    document.getElementById("uploadStatus").textContent = "";
+    status.textContent = "";
   } catch(e) {
+    console.error("BG remove error:", e);
     showToast("Bakgrunnsfjernig feilet, bruker original");
     processedBlob = null;
-    const url = URL.createObjectURL(file);
-    preview.src = url;
+    preview.src = URL.createObjectURL(file);
+    status.textContent = "";
   }
   spinner.style.display = "none";
 }
