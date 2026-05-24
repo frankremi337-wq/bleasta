@@ -186,9 +186,24 @@
   .loading-text{color:var(--text-dim);font-size:14px;}
 
   /* ── TOAST ── */
+  /* ── MAGIC DOTS ── */
+  .magic-dots{display:flex;gap:6px;align-items:center;}
+  .magic-dots span{width:8px;height:8px;border-radius:50%;background:#fff;animation:magicPulse 1.2s ease-in-out infinite;}
+  .magic-dots span:nth-child(2){animation-delay:0.2s;}
+  .magic-dots span:nth-child(3){animation-delay:0.4s;}
+  @keyframes magicPulse{0%,80%,100%{opacity:0.2;transform:scale(0.8)}40%{opacity:1;transform:scale(1.2)}}
+
+  /* ── TOGGLE SWITCH ── */
+  .toggle-track{width:44px;height:24px;background:var(--border);border-radius:12px;position:relative;cursor:pointer;transition:background 0.25s;flex-shrink:0;}
+  .toggle-track.on{background:var(--btn-bg);}
+  .toggle-thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform 0.25s cubic-bezier(0.4,0,0.2,1);box-shadow:0 1px 4px rgba(0,0,0,0.3);}
+  .toggle-track.on .toggle-thumb{transform:translateX(20px);}
+  [data-theme="white"] .toggle-track.on .toggle-thumb,[data-theme="blue"] .toggle-track.on .toggle-thumb,[data-theme="pink"] .toggle-track.on .toggle-thumb{background:#fff;}
+
   #toast{display:none;position:fixed;bottom:calc(env(safe-area-inset-bottom) + 84px);left:50%;background:var(--surface2);color:var(--text);padding:10px 20px;border-radius:12px;font-size:14px;z-index:9999;border:1px solid var(--border);box-shadow:0 6px 20px rgba(0,0,0,0.3);white-space:nowrap;animation:toastIn 0.25s ease forwards;}
   @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/background-removal.js"></script>
 </head>
 <body>
 
@@ -313,8 +328,26 @@
     Trykk eller dra inn bilde
     <input type="file" id="file" accept="image/*" hidden/>
     <br/>
-    <img id="preview" style="display:none;width:140px;margin-top:10px;border-radius:10px;"/>
+    <div id="previewWrap" style="display:none;margin-top:12px;position:relative;display:none;align-items:center;justify-content:center;">
+      <img id="preview" style="width:140px;border-radius:10px;display:block;"/>
+      <div id="bgRemoveSpinner" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.55);border-radius:10px;flex-direction:column;align-items:center;justify-content:center;gap:8px;">
+        <div class="magic-dots"><span></span><span></span><span></span></div>
+        <span style="color:#fff;font-size:11px;font-weight:600;letter-spacing:1px;">BEHANDLER</span>
+      </div>
+    </div>
   </div>
+
+  <!-- bg remove toggle -->
+  <div id="bgToggleWrap" style="display:none;margin:4px 0 8px;">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);">
+      <div class="toggle-track" id="bgToggleTrack" onclick="toggleBgRemove()">
+        <div class="toggle-thumb" id="bgToggleThumb"></div>
+      </div>
+      <span style="font-size:14px;font-weight:600;">Fjern bakgrunn</span>
+      <span style="font-size:12px;color:var(--text-dim);margin-left:auto;">AI Magic ✨</span>
+    </label>
+  </div>
+
   <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
   <div class="upload-status" id="uploadStatus"></div>
   <button id="addBtn" onclick="addItem()">Legg til</button>
@@ -673,7 +706,64 @@ window.closeUpload = () => { document.getElementById("uploadOverlay").classList.
 const dropzone  = document.getElementById("dropzone");
 const fileInput = document.getElementById("file");
 const preview   = document.getElementById("preview");
-function showPreview(f) { if(!f)return; const r=new FileReader(); r.onload=e=>{preview.src=e.target.result;preview.style.display="block";}; r.readAsDataURL(f); }
+let bgRemoveEnabled = false;
+let processedBlob   = null; // holds bg-removed result if active
+
+window.toggleBgRemove = () => {
+  bgRemoveEnabled = !bgRemoveEnabled;
+  const track = document.getElementById("bgToggleTrack");
+  track.classList.toggle("on", bgRemoveEnabled);
+  // if a file is already selected, re-process
+  if (fileInput.files[0]) applyBgRemoveIfNeeded(fileInput.files[0]);
+};
+
+async function applyBgRemoveIfNeeded(file) {
+  processedBlob = null;
+  if (!bgRemoveEnabled) {
+    // just show original
+    const url = URL.createObjectURL(file);
+    preview.src = url;
+    return;
+  }
+  // show spinner over preview
+  const spinner = document.getElementById("bgRemoveSpinner");
+  spinner.style.display = "flex";
+  try {
+    const result = await window.removeBackground(file, {
+      publicPath: "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/",
+      progress: (key, current, total) => {
+        if (total > 0) {
+          const pct = Math.round((current/total)*100);
+          document.getElementById("uploadStatus").textContent = pct < 100 ? `Forbereder AI… ${pct}%` : "";
+        }
+      }
+    });
+    processedBlob = result;
+    preview.src = URL.createObjectURL(result);
+    document.getElementById("uploadStatus").textContent = "";
+  } catch(e) {
+    showToast("Bakgrunnsfjernig feilet, bruker original");
+    processedBlob = null;
+    const url = URL.createObjectURL(file);
+    preview.src = url;
+  }
+  spinner.style.display = "none";
+}
+
+function showPreview(f) {
+  if (!f) return;
+  const wrap = document.getElementById("previewWrap");
+  wrap.style.display = "flex";
+  preview.src = "";
+  // show original first
+  const url = URL.createObjectURL(f);
+  preview.src = url;
+  // show bg-remove toggle
+  document.getElementById("bgToggleWrap").style.display = "block";
+  // if toggle already on, process
+  if (bgRemoveEnabled) applyBgRemoveIfNeeded(f);
+}
+
 dropzone.addEventListener("click",()=>fileInput.click());
 fileInput.addEventListener("change",e=>showPreview(e.target.files[0]));
 dropzone.addEventListener("dragover",e=>{e.preventDefault();dropzone.classList.add("drag-over");});
@@ -703,10 +793,16 @@ window.addItem = async () => {
   if (!currentUser)  { showToast("Du må logge inn først."); return; }
   addBtn.disabled=true; addBtn.textContent="Laster opp…";
   try {
-    const {url,publicId} = await uploadToCloudinary(file);
+    // use bg-removed blob if available, else original file
+  const uploadFile = processedBlob ? new File([processedBlob], file.name.replace(/\.[^.]+$/, ".png"), {type:"image/png"}) : file;
+  const {url,publicId} = await uploadToCloudinary(uploadFile);
     const item = {id:Date.now()+"_"+Math.random().toString(36).slice(2),uid:currentUser.uid,name,category,img:url,cloudinaryId:publicId,rating:0,uploadedAt:Date.now()};
     await saveItem(item); clothes.push(item); outfit[category]=item;
-    document.getElementById("nameInput").value=""; fileInput.value=""; preview.style.display="none"; preview.src="";
+    document.getElementById("nameInput").value=""; fileInput.value=""; preview.src="";
+    document.getElementById("previewWrap").style.display="none";
+    document.getElementById("bgToggleWrap").style.display="none";
+    processedBlob=null; bgRemoveEnabled=false;
+    const track=document.getElementById("bgToggleTrack"); if(track) track.classList.remove("on");
     renderCloset(); renderOutfit();
     showToast(`"${name}" lagt til ✓`); closeUpload();
   } catch(e) { showToast("Feil: "+e.message); }
