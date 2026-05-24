@@ -806,7 +806,7 @@ async function applyBgRemoveIfNeeded(file) {
 
   } catch(e) {
     console.error("BG remove error:", e);
-    showToast("Feilet, bruker original");
+    showToast(e.message ? e.message.slice(0,60) : "Feil");
     processedBlob = null;
     preview.src = URL.createObjectURL(file);
     status.textContent = "";
