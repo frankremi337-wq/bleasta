@@ -344,7 +344,7 @@
         <div class="toggle-thumb" id="bgToggleThumb"></div>
       </div>
       <span style="font-size:14px;font-weight:600;">Fjern bakgrunn</span>
-      <span style="font-size:12px;color:var(--text-dim);margin-left:auto;">AI Magic ✨</span>
+      
     </label>
   </div>
 
@@ -729,7 +729,7 @@ async function applyBgRemoveIfNeeded(file) {
   const spinner = document.getElementById("bgRemoveSpinner");
   spinner.style.display = "flex";
   try {
-    const result = await window.removeBackground(file, {
+    const result = await window.backgroundRemoval.removeBackground(file, {
       publicPath: "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/dist/",
       progress: (key, current, total) => {
         if (total > 0) {
