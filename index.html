@@ -725,88 +725,52 @@ async function applyBgRemoveIfNeeded(file) {
   const spinner = document.getElementById("bgRemoveSpinner");
   const status  = document.getElementById("uploadStatus");
   spinner.style.display = "flex";
-  status.textContent = "Laster AI…";
+  status.textContent = "Laster…";
 
   try {
-    // Use transformers.js with RMBG-1.4 model
-    const { pipeline, env } = await import(
-      "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"
+    const { AutoModel, AutoProcessor, env, RawImage } = await import(
+      "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.2/dist/transformers.min.js"
     );
     env.allowLocalModels = false;
 
-    status.textContent = "Laster modell…";
-    if (!window._bgPipeline) {
-      window._bgPipeline = await pipeline("image-segmentation", "briaai/RMBG-1.4", {
-        progress_callback: (p) => {
-          if (p.status === "progress" && p.total) {
-            const pct = Math.round((p.loaded / p.total) * 100);
-            status.textContent = `${pct}%`;
-          }
-        }
-      });
+    if (!window._bgModel) {
+      status.textContent = "Laster modell…";
+      window._bgModel     = await AutoModel.from_pretrained("briaai/RMBG-1.4", { device: "cpu" });
+      window._bgProcessor = await AutoProcessor.from_pretrained("briaai/RMBG-1.4");
     }
 
     status.textContent = "Behandler…";
+
     const imgUrl = URL.createObjectURL(file);
+    const image  = await RawImage.fromURL(imgUrl);
 
-    const output = await window._bgPipeline(imgUrl);
-    const mask   = output[0].mask; // ImageData-like
+    const { pixel_values } = await window._bgProcessor(image);
+    const { output }       = await window._bgModel({ input: pixel_values });
 
-    // Draw image + apply mask on canvas
+    const maskData = await RawImage.fromTensor(output[0].mul(255).to("uint8")).resize(image.width, image.height);
+
+    const canvas = document.createElement("canvas");
+    canvas.width  = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d");
+
     const img = new Image();
     await new Promise(r => { img.onload = r; img.src = imgUrl; });
-
-    const canvas  = document.createElement("canvas");
-    canvas.width  = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx     = canvas.getContext("2d");
     ctx.drawImage(img, 0, 0);
 
-    const imgData  = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const maskData = mask.data;
-
-    // Scale mask to image size if needed
-    const mCanvas = document.createElement("canvas");
-    mCanvas.width  = mask.width;
-    mCanvas.height = mask.height;
-    const mCtx    = mCanvas.getContext("2d");
-    const mImgData = mCtx.createImageData(mask.width, mask.height);
-    for (let i=0;i<maskData.length;i++) {
-      mImgData.data[i*4]   = maskData[i];
-      mImgData.data[i*4+1] = maskData[i];
-      mImgData.data[i*4+2] = maskData[i];
-      mImgData.data[i*4+3] = 255;
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < maskData.data.length; i++) {
+      imgData.data[i * 4 + 3] = maskData.data[i];
     }
-    mCtx.putImageData(mImgData, 0, 0);
+    ctx.putImageData(imgData, 0, 0);
 
-    // Scale mask to image dimensions
-    const finalCanvas = document.createElement("canvas");
-    finalCanvas.width  = img.naturalWidth;
-    finalCanvas.height = img.naturalHeight;
-    const fCtx = finalCanvas.getContext("2d");
-    fCtx.drawImage(img, 0, 0);
-    const fData = fCtx.getImageData(0, 0, finalCanvas.width, finalCanvas.height);
-
-    // Draw scaled mask
-    const scaleCanvas = document.createElement("canvas");
-    scaleCanvas.width  = img.naturalWidth;
-    scaleCanvas.height = img.naturalHeight;
-    const sCtx = scaleCanvas.getContext("2d");
-    sCtx.drawImage(mCanvas, 0, 0, img.naturalWidth, img.naturalHeight);
-    const sData = sCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
-
-    for (let i=0;i<fData.data.length/4;i++) {
-      fData.data[i*4+3] = sData.data[i*4]; // use red channel as alpha
-    }
-    fCtx.putImageData(fData, 0, 0);
-
-    processedBlob = await new Promise(r => finalCanvas.toBlob(r, "image/png"));
+    processedBlob = await new Promise(r => canvas.toBlob(r, "image/png"));
     preview.src   = URL.createObjectURL(processedBlob);
     status.textContent = "";
 
   } catch(e) {
     console.error("BG remove error:", e);
-    showToast(e.message ? e.message.slice(0,60) : "Feil");
+    showToast(e.message ? e.message.slice(0, 80) : "Feil");
     processedBlob = null;
     preview.src = URL.createObjectURL(file);
     status.textContent = "";
